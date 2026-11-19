@@ -96,8 +96,32 @@ def add_new_booking(hotel_data: dict, guest_name: str, check_in: str, check_out:
     """
     Creates a simulated booking, deducts available Smart Buying inventory,
     and updates live demand records.
+    Returns (booking_record, error_message). error_message is None on success.
     """
     engine = st.session_state.agent_engine
+    hid = hotel_data["master_hotel_id"]
+    rec_df = st.session_state.procurement_recommendations
+    idx = rec_df.index[rec_df["master_hotel_id"] == hid].tolist()
+
+    # --- Inventory availability guard ---
+    # Only block when the hotel is a procured (Purchased) property with tracked stock.
+    # Standard catalog hotels are fulfilled on-demand without a stock limit.
+    if idx:
+        row_status = rec_df.loc[idx[0], "status"]
+        curr_avail = int(rec_df.loc[idx[0], "available_rooms"])
+        if row_status == "Purchased" and curr_avail < rooms:
+            # Return a sentinel booking with status INVENTORY_UNAVAILABLE so the caller can surface a warning.
+            error_booking = {
+                "booking_id": None,
+                "hotel_name": hotel_data["canonical_name"],
+                "status": "INVENTORY_UNAVAILABLE",
+                "error": (
+                    f"Insufficient inventory: only {curr_avail} room(s) available for "
+                    f"{hotel_data['canonical_name']} but {rooms} requested."
+                )
+            }
+            return error_booking
+
     booking = engine.create_booking(
         hotel_data=hotel_data,
         guest_name=guest_name,
@@ -107,11 +131,8 @@ def add_new_booking(hotel_data: dict, guest_name: str, check_in: str, check_out:
         rooms=rooms
     )
     st.session_state.bookings.append(booking)
-    
+
     # Deduct room inventory in Smart Buying recommendations
-    hid = hotel_data["master_hotel_id"]
-    rec_df = st.session_state.procurement_recommendations
-    idx = rec_df.index[rec_df["master_hotel_id"] == hid].tolist()
     if idx:
         curr_avail = rec_df.loc[idx[0], "available_rooms"]
         rec_df.loc[idx[0], "available_rooms"] = max(0, curr_avail - rooms)
@@ -153,11 +174,12 @@ def execute_cancellation(booking_id: str):
                 )
                 st.session_state.procurement_recommendations = rec_df
 
-            # Adjust demand
+            # Adjust demand: reverse the booking-time increments on week_8 and last_week_demand
             d_df = st.session_state.demand_history
             d_idx = d_df.index[d_df["master_hotel_id"] == hid].tolist()
             if d_idx:
                 d_df.loc[d_idx[0], "week_8"] = max(0, d_df.loc[d_idx[0], "week_8"] - rooms)
+                d_df.loc[d_idx[0], "last_week_demand"] = max(0, d_df.loc[d_idx[0], "last_week_demand"] - rooms)
                 st.session_state.demand_history = d_df
                 st.session_state.forecasted_demand = compute_demand_forecast(d_df)
             break

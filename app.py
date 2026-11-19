@@ -688,19 +688,29 @@ elif page == "4. AI Travel Agent":
                         num_guests=2,
                         rooms=1
                     )
-                    st.session_state.chat_messages.append({
-                        "role": "assistant",
-                        "content": (
-                            f"🎉 **Simulated Booking Confirmed!**\n\n"
-                            f"• **Booking ID:** `{new_b['booking_id']}`\n"
-                            f"• **Hotel:** {new_b['hotel_name']} ({new_b['area']})\n"
-                            f"• **Guest:** {new_b['guest_name']}\n"
-                            f"• **Stay:** {new_b['check_in']} to {new_b['check_out']} ({new_b['nights']} nights)\n"
-                            f"• **Total Amount:** ₹{new_b['total_amount']:,.0f}\n"
-                            f"• **Inventory Feedback:** 1 room deducted from Smart Buying stock.\n\n"
-                            f"Your reservation is now active in the system!"
-                        )
-                    })
+                    if new_b.get("status") == "INVENTORY_UNAVAILABLE":
+                        st.session_state.chat_messages.append({
+                            "role": "assistant",
+                            "content": (
+                                f"⚠️ **Booking Unavailable**\n\n"
+                                f"{new_b['error']}\n\n"
+                                f"Please choose another hotel or check the available stock in the booking panel."
+                            )
+                        })
+                    else:
+                        st.session_state.chat_messages.append({
+                            "role": "assistant",
+                            "content": (
+                                f"🎉 **Simulated Booking Confirmed!**\n\n"
+                                f"• **Booking ID:** `{new_b['booking_id']}`\n"
+                                f"• **Hotel:** {new_b['hotel_name']} ({new_b['area']})\n"
+                                f"• **Guest:** {new_b['guest_name']}\n"
+                                f"• **Stay:** {new_b['check_in']} to {new_b['check_out']} ({new_b['nights']} nights)\n"
+                                f"• **Total Amount:** ₹{new_b['total_amount']:,.0f}\n"
+                                f"• **Inventory Feedback:** 1 room deducted from Smart Buying stock.\n\n"
+                                f"Your reservation is now active in the system!"
+                            )
+                        })
                 else:
                     st.session_state.chat_messages.append({
                         "role": "assistant",
@@ -760,7 +770,10 @@ elif page == "4. AI Travel Agent":
                 selling_price = proc_match.iloc[0]["suggested_selling_price"]
 
             if is_proc:
-                st.markdown(f"<span class='badge-procured'>⭐ TBO Strategic Inventory — {avail_rooms} rooms in stock</span>", unsafe_allow_html=True)
+                if avail_rooms > 0:
+                    st.markdown(f"<span class='badge-procured'>⭐ TBO Strategic Inventory — {avail_rooms} rooms in stock</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<span class='badge-risk'>⚠️ TBO Inventory Sold Out — No rooms available</span>", unsafe_allow_html=True)
             else:
                 st.caption(f"Standard Catalog Fulfillment via {h_data['best_supplier']}")
 
@@ -778,7 +791,12 @@ elif page == "4. AI Travel Agent":
             total_est = selling_price * nights * rooms_count
             st.markdown(f"**Total Price:** `₹{total_est:,.0f}` ({nights} nights @ ₹{selling_price:,.0f}/night)")
 
-            if st.button("Confirm Simulated Booking", type="primary"):
+            # Disable booking button when procured inventory is insufficient
+            insufficient_stock = is_proc and (avail_rooms < rooms_count)
+            if insufficient_stock:
+                st.warning(f"⚠️ Only **{avail_rooms}** room(s) available in Smart Buying inventory. Reduce the number of rooms or choose a different hotel.")
+
+            if st.button("Confirm Simulated Booking", type="primary", disabled=insufficient_stock):
                 hotel_payload = {
                     "master_hotel_id": h_data["master_hotel_id"],
                     "canonical_name": h_data["canonical_name"],
@@ -798,12 +816,15 @@ elif page == "4. AI Travel Agent":
                     num_guests=num_guests,
                     rooms=rooms_count
                 )
-                st.success(f"🎉 Booking Confirmed! ID: **{new_b['booking_id']}**")
-                st.session_state.chat_messages.append({
-                    "role": "assistant",
-                    "content": f"🎉 **Booking Confirmed!**\n\n• **Booking ID:** `{new_b['booking_id']}`\n• **Hotel:** {new_b['hotel_name']}\n• **Guest:** {new_b['guest_name']}\n• **Dates:** {new_b['check_in']} to {new_b['check_out']} ({new_b['nights']} nights)\n• **Total Paid:** ₹{new_b['total_amount']:,.0f}\n• **Inventory Updated:** Deducted {new_b['rooms']} room(s) from Smart Buying stock."
-                })
-                st.rerun()
+                if new_b.get("status") == "INVENTORY_UNAVAILABLE":
+                    st.error(f"⚠️ {new_b['error']}")
+                else:
+                    st.success(f"🎉 Booking Confirmed! ID: **{new_b['booking_id']}**")
+                    st.session_state.chat_messages.append({
+                        "role": "assistant",
+                        "content": f"🎉 **Booking Confirmed!**\n\n• **Booking ID:** `{new_b['booking_id']}`\n• **Hotel:** {new_b['hotel_name']}\n• **Guest:** {new_b['guest_name']}\n• **Dates:** {new_b['check_in']} to {new_b['check_out']} ({new_b['nights']} nights)\n• **Total Paid:** ₹{new_b['total_amount']:,.0f}\n• **Inventory Updated:** Deducted {new_b['rooms']} room(s) from Smart Buying stock."
+                    })
+                    st.rerun()
 
         # Strict Cancellation Confirmation Workflow
         st.markdown("#### 🛡️ Booking Management & Cancellation")
