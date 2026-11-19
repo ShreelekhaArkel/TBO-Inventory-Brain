@@ -347,6 +347,44 @@ def run_e2e_test():
 
     # ─────────────────────────────────────────────────────────────────────────
     print("\n=================================================================")
+    print("TA-05 FIX — parse_user_intent: cancel keyword disambiguation")
+    print("=================================================================")
+    # Hotel-amenity queries that contain 'cancel' must route to recommend,
+    # NOT to cancel_request.
+    _ta05_cases = [
+        # (message, expected_intent, label)
+        ("Find a luxury 5-star hotel with breakfast and free cancellation",
+         "recommend",      "amenity 'free cancellation' → recommend"),
+        ("Luxury hotel with free cancellation in marina",
+         "recommend",      "amenity 'free cancellation' in location → recommend"),
+        ("Find a refundable hotel with breakfast",
+         "recommend",      "amenity 'refundable' → recommend"),
+        ("Hotel with cancellation policy",
+         "recommend",      "'cancellation policy' mention → recommend"),
+        # Genuine cancellation requests must still route correctly
+        ("Cancel booking TBO-DXB-12345",
+         "cancel_request", "explicit cancel + booking ID → cancel_request"),
+        ("I want to cancel my booking TBO-DXB-99999",
+         "cancel_request", "I want to cancel + ID → cancel_request"),
+        ("I need to cancel my reservation",
+         "cancel_request", "I need to cancel my reservation → cancel_request"),
+        ("cancel my booking",
+         "cancel_request", "cancel my booking (no ID) → cancel_request"),
+        # Other intents must be unaffected
+        ("Show me hotels in downtown Dubai under 20000",
+         "recommend",      "plain recommend → recommend"),
+        ("Book HTL-001",
+         "book_request",   "book request → book_request"),
+    ]
+    for _msg, _expected, _label in _ta05_cases:
+        _result = agent.parse_user_intent(_msg)
+        check(
+            _result["intent"] == _expected,
+            f"parse_user_intent: {_label}"
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    print("\n=================================================================")
     print("END-TO-END INTEGRATION METRICS CONSISTENCY")
     print("=================================================================")
     # Verify that total_rooms_procured in pipeline metrics matches what's actually purchased

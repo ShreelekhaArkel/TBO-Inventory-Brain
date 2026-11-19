@@ -21,17 +21,34 @@ class TravelAgentEngine:
         """
         msg_lower = user_msg.lower()
         
-        # Check for cancellation intent
-        cancel_match = re.search(r'(?:cancel|cancellation)\s*(?:booking)?\s*(tbo-dxb-\d{5})?', msg_lower)
-        if cancel_match or "cancel" in msg_lower:
-            booking_id = cancel_match.group(1).upper() if cancel_match and cancel_match.group(1) else None
-            # Also scan for raw TBO-DXB-XXXXX
+        # Check for cancellation intent.
+        # Rule: only treat the message as a cancellation REQUEST when the user is
+        # explicitly acting to cancel their own booking.  Positive signals:
+        #   (a) A TBO-DXB-XXXXX booking ID appears anywhere in the message, OR
+        #   (b) The phrasing is an action verb directed at a booking/reservation
+        #       e.g. 'cancel my booking', 'I want to cancel', 'cancel booking TBO-...'
+        # Negative guard: phrases like 'free cancellation', 'free cancel policy',
+        # or 'cancellation policy' describe a *hotel feature* the user wants to
+        # search for, so they must fall through to the recommend intent.
+        _has_booking_id = bool(re.search(r'tbo-dxb-\d{5}', msg_lower))
+        _action_cancel  = bool(re.search(
+            r'(?:i\s+(?:want|need|would like)\s+to\s+cancel'
+            r'|cancel\s+(?:my|this|the)\s+(?:booking|reservation|trip)'
+            r'|cancel\s+booking'
+            r'|cancel\s+reservation)',
+            msg_lower
+        ))
+        # 'free cancellation' / 'free cancel' / 'cancellation policy' = hotel policy preference
+        _policy_phrase  = bool(re.search(r'free\s*cancel|cancellation\s+polic', msg_lower))
+
+        if (_has_booking_id or _action_cancel) and not _policy_phrase:
+            booking_id = None
             raw_id = re.search(r'tbo-dxb-\d{5}', msg_lower)
-            if raw_id and not booking_id:
+            if raw_id:
                 booking_id = raw_id.group(0).upper()
             return {"intent": "cancel_request", "booking_id": booking_id}
 
-        # Check for viewing bookings
+# Check for viewing bookings
         if any(w in msg_lower for w in ["my booking", "view booking", "show booking", "current booking", "active booking", "list booking"]):
             return {"intent": "view_bookings"}
 
